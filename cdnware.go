@@ -61,7 +61,7 @@ func revFile(path string, baseDir string) string {
     return hashPath
 }
 
-func rev(baseDir string) map[string]string {
+func rev(baseDir string, cdnBaseUrl string) map[string]string {
     lsrcpath := len(baseDir)
     repath := regexp.MustCompile(`^` + baseDir + `/assets/.+(\.css|\.js|\.jpg|\.png|\.svg|\.ico|\.mp4|\.woff2)$`)
     err := os.MkdirAll(baseDir + "/assets-rev", os.ModePerm)
@@ -71,7 +71,8 @@ func rev(baseDir string) map[string]string {
         check(err)
         matched := repath.MatchString(path)
         if matched == true {
-            m[path[lsrcpath:]] = revFile(path, baseDir)[lsrcpath:]
+            rev := revFile(path, baseDir)[lsrcpath:]
+            m[path[lsrcpath:]] = fmt.Sprintf("%s%s", cdnBaseUrl, rev)
         }
         return nil
     })
@@ -79,7 +80,7 @@ func rev(baseDir string) map[string]string {
     return m
 }
 
-func repFile(path string, manifest map[string]string, cdnBaseUrl string) {
+func repFile(path string, manifest map[string]string) {
     repath := regexp.MustCompile(`["'\(]/assets/.+?(?:\.css|\.js|\.jpg|\.png|\.svg|\.ico|\.mp4|\.woff2)["'\)]`)
     input, err := ioutil.ReadFile(path)
     check(err)
@@ -88,12 +89,12 @@ func repFile(path string, manifest map[string]string, cdnBaseUrl string) {
         matches := repath.FindAllString(line, -1)
         for _, match := range matches {
             lm := len(match)
-            sq := match[0:1]
-            eq := match[lm-1:lm]
+            sq := match[0:1]  // start quote ("|')
+            eq := match[lm-1:lm]  // end quote ("|')
             orig := match[1:lm-1]
             rev, ok := manifest[orig]
             if ok {
-                rep := fmt.Sprintf("%s%s%s%s", sq, cdnBaseUrl, rev, eq)
+                rep := fmt.Sprintf("%s%s%s", sq, rev, eq)
                 line = strings.Replace(line, match, rep, 1)
             }
         }
@@ -104,7 +105,7 @@ func repFile(path string, manifest map[string]string, cdnBaseUrl string) {
     check(err)
 }
 
-func useman(manifest map[string]string, baseDir string, cdnBaseUrl string) {
+func useman(manifest map[string]string, baseDir string) {
     repath := regexp.MustCompile(`^` + baseDir + `/.+(\.css|\.js|\.html|\.webmanifest)$`)
     expath := regexp.MustCompile(`^` + baseDir + `/assets/`)
     err := filepath.Walk(baseDir, func(path string, info fs.FileInfo, err error) error {
@@ -112,7 +113,7 @@ func useman(manifest map[string]string, baseDir string, cdnBaseUrl string) {
         matched := repath.MatchString(path)
         excluded := expath.MatchString(path)
         if matched == true  && excluded != true {
-            repFile(path, manifest, cdnBaseUrl)
+            repFile(path, manifest)
         }
         return nil
     })
@@ -152,9 +153,9 @@ func parseFlags() (string, string) {
 
 func main() {
     baseDir, cdnBaseUrl := parseFlags()
-    manifest := rev(baseDir)
-    useman(manifest, baseDir, cdnBaseUrl)
-    // jsonData, err := json.MarshalIndent(manifest, "", "  ")
-    // check(err)
-    // fmt.Printf("%s\n", jsonData)
+    manifest := rev(baseDir, cdnBaseUrl)
+    useman(manifest, baseDir)
+    jsonData, err := json.MarshalIndent(manifest, "", "  ")
+    check(err)
+    fmt.Printf("%s\n", jsonData)
 }
